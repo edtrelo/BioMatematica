@@ -11,7 +11,7 @@ import pickle as pkl
 class SEIRDmodel:
 
     def __init__(self, matriz_viajes, matriz_defunciones, 
-                 indices_primeroscasos = [1, 3, 5],
+                 indices_primeroscasos = [1, 3, 5], total_dias = 100,
                  propInfAislamientoTotal = 0.9,
                  tasaIncubacion = 1/7,
                  tasaRecuperacion = 1/21,
@@ -23,7 +23,7 @@ class SEIRDmodel:
         self.size = matriz_viajes.shape[0] 
         self.casos = matriz_defunciones
         self.poblacion = self.casos['poblacion'].to_numpy()
-        self.viajesfuera = self.viajes.sum().to_numpy()
+        #self.viajesfuera = self.viajes.sum().to_numpy()
         # los parámetros que describen al modelo
         self.f = 1 - propInfAislamientoTotal
         self.η = tasaIncubacion
@@ -33,19 +33,37 @@ class SEIRDmodel:
         self.Br = tasasInfeccion
         # parámetros para las simulaciones
         self.fecha_inicio = pd.to_datetime("27-february-2020")
-        self.dias = 100
+        self.dias = total_dias
         self.tmax = self.dias - 1
         self.indices = indices_primeroscasos
+        self.redtraf = 0
+        self.inicio_red = 0
      
     def __Q(self, i, j, d):
         wd = (self.fecha_inicio.weekday() + d) % 7
-        if wd == 5:
-            return self.viajes.iloc[i, j + self.size]
-        elif wd == 6: 
-            return self.viajes.iloc[i, j + 2*self.size]
+        if wd == 5:  #sábado
+            q = self.viajes.iloc[i, j + self.size]
+        elif wd == 6: #domingo
+            q = self.viajes.iloc[i, j + 2*self.size]
         else:
-            return self.viajes.iloc[i, j]
+            q = self.viajes.iloc[i, j]
 
+        if d>=self.inicio_red:
+                q *= (1-self.redtraf)
+        return q
+    
+    def __Ngorro(self, k, d):
+        wd = (self.fecha_inicio.weekday() + d) % 7
+        if wd == 5:
+            n = self.viajes.iloc[:, k + self.size].sum()
+        elif wd == 6:
+            n = self.viajes.iloc[:, k + self.size*2].sum()
+        else:
+            n = self.viajes.iloc[:, k].sum()
+        if d>self.inicio_red:
+            n *= (1-self.redtraf)
+        return n
+        
     def __F(self, t, X, μ, *Br):
         """Modelo metapoblacional de la dinámica del covid-19 por Calvetti, et. al. Establece el sistema de edo para los parámetros
         mu en R y Br en R^n."""
@@ -84,13 +102,13 @@ class SEIRDmodel:
             # ponemos alias más fáciles de seguir
             f = self.f
             N = self.poblacion
-            M = self.viajesfuera
+            M = self.__Ngorro
             ν = self.ν
             γ = self.γ
             η = self.η
             # X_i; los componentes de cada ciudad
             def Σ(k):
-                return sum([num(m, k, t) * (E(m) + f * I(m))/(N[m] * M[k]) for m in range(self.size)])
+                return sum([num(m, k, t) * (E(m) + f * I(m))/(N[m] * M(k, t)) for m in range(self.size)])
             
             # ecuación de los suceptibles para la ciudad i
             dXdt[5*i + 0] = - ν * S(i)/N[i] * sum([num(i, k, t) * βr(k) * Σ(k) for k in range(self.size)]) - βr(i)*(1-ν)*S(i)*(E(i) + f*I(i))/N[i]
@@ -166,26 +184,38 @@ class SEIRDmodel:
         ajuste = least_squares(residual, g0, bounds = ([0]*(self.size+1), [1]*(self.size+1))) 
         return ajuste.x # mu, Br
     
-    def simular(self, 
-                propInfAislamientoTotal = 0.9,
-                reduccionTrafico = 0, 
-                tiempoTrabajo = 5/12, 
-                ajuste = None):
+    def simular(self, redTraf = 0, semana_inicio_red = 0):
+        self.inicio_red = semana_inicio_red*7
+        self.redtraf = redTraf
         
-        viejos_params = self.f, self.ν, self.viajes.copy(deep = True)
-
-        self.f = 1 - propInfAislamientoTotal
-        self.ν = tiempoTrabajo
-        rT = reduccionTrafico
-        self.viajes = self.viajes.multiply(1-rT)
-
-        if not ajuste:
-            with open("D:/Edgar Trejo/Universidad/BioMatematica/Modeling COVID-19 Spreading in the ZMVM/data/results/ajuste8regiones.pkl", "rb") as file:
-                ajuste = pkl.load(file)
+        with open("D:/Edgar Trejo/Universidad/BioMatematica/Modeling COVID-19 Spreading in the ZMVM/results/ajuste8regiones.pkl", "rb") as file:
+            ajuste = pkl.load(file)
 
         sol = self.__g(ajuste)
 
-        self.f, self.ν, self.viajes = viejos_params
-
         return sol
 
+    @property
+    def params(self):
+        p = {
+            'Tasa de Incubación': self.η,
+            'Tasa de Recuperación': self.γ,
+            'Media de Tiempo fuera de Casa': self.ν,
+            'Proporción de Infectados en Aislamiento Total': 1 - self.f,
+            'Mortalidad': self.μ,
+            'Tasas de Infección': self.Br
+        }
+
+        return p
+    
+    @property
+    def diasModelados(self):
+        return self.dias
+    
+    @property
+    def poblaciones(self):
+        return self.poblacion
+
+    @property
+    def ncompartimientos(self):
+        return self.size
