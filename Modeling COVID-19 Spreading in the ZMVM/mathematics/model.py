@@ -8,10 +8,26 @@ from scipy.integrate import solve_ivp
 from scipy.optimize import least_squares
 import pickle as pkl
 
+# matriz de viajes
+M_es = pd.read_csv("Modeling COVID-19 Spreading in the ZMVM/data/cleandata/viajes/viajes_es_reg.csv", 
+                  index_col=0)
+M_s = pd.read_csv("Modeling COVID-19 Spreading in the ZMVM/data/cleandata/viajes/viajes_s_reg.csv", 
+                  index_col=0)
+M_d = pd.read_csv("Modeling COVID-19 Spreading in the ZMVM/data/cleandata/viajes/viajes_d_reg.csv", 
+                  index_col=0)
+
+# matriz de defunciones 
+casos = pd.read_csv("data/cleandata/datos_epi/defunciones_reg.csv", index_col = 0)
+
+# población
+with open('data/cleandata/ZMVM/pob_reg.pk', 'rb') as file:
+    pob = pkl.load(file)
+
 class SEIRDmodel:
 
-    def __init__(self, matriz_viajes, matriz_defunciones, 
-                 indices_primeroscasos = [1, 3, 5], total_dias = 100,
+    def __init__(self, 
+                 indices_primeroscasos = [1, 5, 7], 
+                 total_dias = 100,
                  propInfAislamientoTotal = 0.9,
                  tasaIncubacion = 1/7,
                  tasaRecuperacion = 1/21,
@@ -19,11 +35,11 @@ class SEIRDmodel:
                  mortalidad = None,
                  tasasInfeccion = None):
         
-        self.viajes = matriz_viajes
-        self.size = matriz_viajes.shape[0] 
-        self.casos = matriz_defunciones
-        self.poblacion = self.casos['poblacion'].to_numpy()
-        #self.viajesfuera = self.viajes.sum().to_numpy()
+        self.viajes = [M_es, M_s, M_d]
+        self.size = self.viajes[0].shape[0] 
+        self.casos = casos
+        self.poblacion = pob
+ 
         # los parámetros que describen al modelo
         self.f = 1 - propInfAislamientoTotal
         self.η = tasaIncubacion
@@ -31,6 +47,7 @@ class SEIRDmodel:
         self.ν = tiempoTrabajo
         self.μ = mortalidad
         self.Br = tasasInfeccion
+
         # parámetros para las simulaciones
         self.fecha_inicio = pd.to_datetime("27-february-2020")
         self.dias = total_dias
@@ -42,11 +59,11 @@ class SEIRDmodel:
     def __Q(self, i, j, d):
         wd = (self.fecha_inicio.weekday() + d) % 7
         if wd == 5:  #sábado
-            q = self.viajes.iloc[i, j + self.size]
+            q = self.viajes[1].iloc[i, j]
         elif wd == 6: #domingo
-            q = self.viajes.iloc[i, j + 2*self.size]
+            q = self.viajes[2].iloc[i, j]
         else:
-            q = self.viajes.iloc[i, j]
+            q = self.viajes[0].iloc[i, j]
 
         if d>=self.inicio_red:
                 q *= (1-self.redtraf)
@@ -55,11 +72,11 @@ class SEIRDmodel:
     def __Ngorro(self, k, d):
         wd = (self.fecha_inicio.weekday() + d) % 7
         if wd == 5:
-            n = self.viajes.iloc[:, k + self.size].sum()
+            n = self.viajes[1].iloc[:, k].sum()
         elif wd == 6:
-            n = self.viajes.iloc[:, k + self.size*2].sum()
+            n = self.viajes[2].iloc[:, k].sum()
         else:
-            n = self.viajes.iloc[:, k].sum()
+            n = self.viajes[0].iloc[:, k].sum()
         if d>self.inicio_red:
             n *= (1-self.redtraf)
         return n
@@ -155,7 +172,7 @@ class SEIRDmodel:
             for k in range(self.size):
                 # queremos los primeros tn casos de la ciudad k
                 # suma acumulada de las defunciones, queremos los tn - 20 primeros días
-                data[k] = self.casos.iloc[:, 1:-2].cumsum(axis = 1).iloc[k, 1:tn - 19]
+                data[k] = self.casos.cumsum(axis = 1).iloc[k, :tn-20]
             return data
 
         # obtenemos los datos
