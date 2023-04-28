@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as cs
 import sys
 sys.path.insert(1, "D:/Edgar Trejo/Universidad/BioMatematica/Modeling COVID-19 Spreading in the ZMVM/mathematics")
-import datosporregion as dpr
 import model
 
 
@@ -89,23 +88,13 @@ def plotMaps(gdf, ax, fig):
 def generateMaps(gdf, ax, fig):
     pass
 
-def reducirTrafico(red = 0, semana_inicio = 0):
-    """
-    Args:
-    red(float): fracción a reducir, entre 0 y 1."""
-    global viajes
-    dias = modelobase.diasModelados
-    semanas = int(dias/7)
-    viajesreducidos = viajes.copy(deep = True)
-    viajesreducidos = viajesreducidos.multiply(1-red)
-    return viajesreducidos
 
 def simularReduccionTrafico(red = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-                            sem_ini = 0):
+                            sem_ini = None):
     global casos
     df = {}
     for r in red:
-        modelored = model.SEIRDmodel(viajes, casos)
+        modelored = model.SEIRDmodel()
         dfred = dfSimulacion(modelored, redTraf = r, semana_inicio_red = sem_ini)
         reduccionesMedias = reduccionMedia(dfred)
         df['{}'.format(r)] = reduccionesMedias
@@ -128,7 +117,5 @@ def reduccionMedia(caso):
 
 # ----------------------- CASO BASE --------------------------- #
 # como las simulaciones las vamos a hacer para compararlas contra el caso base
-viajes = dpr.viajes_regiones()
-casos = dpr.casos_regiones()
-modelobase = model.SEIRDmodel(viajes, casos)
+modelobase = model.SEIRDmodel()
 dfbase = dfSimulacion(modelobase)

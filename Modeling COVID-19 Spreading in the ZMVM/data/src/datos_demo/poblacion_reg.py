@@ -12,5 +12,7 @@ for r in regiones:
 
 pobs = list(regiones.values())
 
+print(pobs)
+
 with open('data/cleandata/ZMVM/pob_reg.pkl', 'wb') as handle:
     pickle.dump(pobs, handle, protocol=pickle.HIGHEST_PROTOCOL)
